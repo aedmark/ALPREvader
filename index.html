@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sovereign ALPR Router</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; background-color: #111; font-family: monospace; color: #fff; }
+        #map { width: 100vw; height: 100vh; }
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border: 1px solid #333;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="hud">
+        <h3 style="margin-top: 0; color: #00ffcc;">ALPR EVASION ROUTER</h3>
+        <input type="text" id="origin" placeholder="Origin (e.g., Wrigley Field, Chicago)" style="width: 90%; margin-bottom: 10px; padding: 8px; background: #222; color: #fff; border: 1px solid #555;">
+        <input type="text" id="destination" placeholder="Destination (e.g., Millennium Park, Chicago)" style="width: 90%; margin-bottom: 10px; padding: 8px; background: #222; color: #fff; border: 1px solid #555;">
+        <button onclick="executeEvasion()" style="width: 95%; padding: 10px; cursor: pointer; background: #00ffcc; color: #000; border: none; font-weight: bold; margin-bottom: 10px;">CALCULATE TRAJECTORY</button>
+        <div id="status" style="color: #aaa; font-size: 0.9em;">Awaiting coordinates...</div>
+    </div>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map').setView([41.8781, -87.6298], 12); // Centered on Chicago
+        let currentRouteLayer = null;
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        async function geocode(query) {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+            const data = await res.json();
+            if (data.length === 0) throw new Error(`Could not find coordinates for: ${query}`);
+            return [parseFloat(data[0].lon), parseFloat(data[0].lat)];
+        }
+
+        async function executeEvasion() {
+            const statusDiv = document.getElementById('status');
+            const originText = document.getElementById('origin').value;
+            const destText = document.getElementById('destination').value;
+
+            if (!originText || !destText) {
+                statusDiv.innerText = "Error: Please enter both origin and destination.";
+                return;
+            }
+
+            try {
+                statusDiv.innerText = "Translating addresses to coordinates...";
+                const originCoords = await geocode(originText);
+                const destCoords = await geocode(destText);
+
+                statusDiv.innerText = "Calculating evasive geometry...";
+                const response = await fetch('http://localhost:8000/api/v1/routes/evasive', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        origin: originCoords,
+                        destination: destCoords,
+                        profile: "car"
+                    })
+                });
+
+                if (!response.ok) throw new Error("Routing engine failed. Area may be completely trapped.");
+
+                const data = await response.json();
+
+                if (currentRouteLayer) {
+                    map.removeLayer(currentRouteLayer);
+                }
+
+                currentRouteLayer = L.geoJSON(data.route_geometry, {
+                    style: { color: '#00ffcc', weight: 5, opacity: 0.8 }
+                }).addTo(map);
+
+                // Auto-center the camera on the new route
+                map.fitBounds(currentRouteLayer.getBounds(), { padding: [50, 50] });
+
+                const distanceMiles = (data.distance_meters / 1609.34).toFixed(2);
+                statusDiv.innerHTML = `
+                    <span style="color: #fff;">Status: Secure</span><br>
+                    Distance: ${distanceMiles} mi<br>
+                    Cameras Evaded: <span style="color: #ff4444; font-weight: bold;">${data.cameras_evaded}</span>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `<span style="color: #ff4444;">Error: ${error.message}</span>`;
+            }
+        }
+    </script>
+</body>
+</html>
