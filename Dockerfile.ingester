@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    wget \
+    libpq-dev gcc libexpat1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install python dependencies for osmium and postgres
+RUN pip install osmium psycopg2-binary requests
+
+# We will mount the current directory to /app
+CMD ["bash"]

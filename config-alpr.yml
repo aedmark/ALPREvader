@@ -1,5 +1,5 @@
 graphhopper:
-  datareader.file: us-latest.osm.pbf
+  datareader.file: iowa-latest.osm.pbf
   graph.location: graph-cache
   import.osm.ignored_highways: footway,cycleway,path,pedestrian,steps
   graph.encoded_values: car_access, car_average_speed

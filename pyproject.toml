@@ -7,5 +7,6 @@ dependencies = [
     "psycopg2-binary>=2.9.12",
     "requests>=2.34.2",
     "uvicorn >= 0.51.0",
-    "fastapi >= 0.139.2"
+    "fastapi >= 0.139.2",
+    "osmium>=4.3.1",
 ]
