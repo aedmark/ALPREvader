@@ -35,8 +35,8 @@ then
     # Use sed to replace datareader.file line
     sed -i -E "s/datareader.file: .*/datareader.file: ${FILE}/g" config-alpr.yml
     
-    echo "[*] Wiping old graph-cache..."
-    rm -rf graph-cache/*
+    echo "[*] Wiping old graph-cache (using Docker to bypass root ownership)..."
+    docker run --rm -v $(pwd):/app ubuntu rm -rf /app/graph-cache/*
     
     echo "[*] Restarting the routing engine container..."
     # If the stack is already up, restart routing. Otherwise, start it.
