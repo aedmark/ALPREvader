@@ -1,5 +1,7 @@
 # **ALPR Evader: A Sovereign Surveillance Evasion Routing (SSER) Architecture**
 
+<img width="1578" height="851" alt="image" src="https://github.com/user-attachments/assets/3b32ed95-c082-4bbb-8809-4e6c3a48e88f" />
+
 **OVERVIEW**
 
 This document formalizes the architecture, data provenance, systemic mechanics, and ideological importance of the custom-built, local-metal Automatic License Plate Reader (ALPR, or FLOCK) evasion stack developed across our session. By decoupling navigation from surveillance-capitalist frameworks (such as Google Maps) and utilizing open-source geospatial tools, we establish a sovereign pipeline that respects user privacy and enforces semantic autonomy.
