@@ -53,31 +53,19 @@ I have created an automated setup script to transition from the local Illinois d
 
 To execute the upgrade on your server, follow these exact steps:
 
-1. Bring down the current local Illinois stack to free up memory:
-    
-    bash
-    
-    docker compose down
-    
-2. Delete the old routing graph cache so GraphHopper builds a fresh one:
-    
-    bash
-    
-    rm -rf graph-cache/*
-    
-3. Run the setup script to download the 9.5GB USA map:
+1. Run the setup script to download the 9.5GB USA map:
     
     bash
     
     ./scripts/setup-usa.sh
     
-4. Spin up the new continental stack:
+2. Spin up the new continental stack:
     
     bash
     
     docker compose up -d
     
-5. **Wait for ingestion:** GraphHopper will take anywhere from 30 minutes to 2 hours to process the 9.5GB USA file and build the new `graph-cache`. You can monitor its progress via:
+3. **Wait for ingestion:** GraphHopper will take anywhere from 30 minutes to 2 hours to process the 9.5GB USA file and build the new `graph-cache`. You can monitor its progress via:
     
     bash
     
