@@ -17,7 +17,7 @@ echo " Target State: ${STATE}"
 echo "=========================================="
 
 echo "[*] Downloading ${FILE} from Geofabrik..."
-wget -c "${URL}" -O "${FILE}" || { echo "Failed to download map data."; exit 1; }
+wget "${URL}" -O "${FILE}" || { echo "Failed to download map data."; exit 1; }
 
 echo "[*] Extracting ALPR Cameras into PostGIS (via Docker)..."
 # We spin up the ingester container to run the python parsing script
