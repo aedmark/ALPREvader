@@ -1,0 +1,16 @@
+/california-latest.osm.pbf
+/graph-cache/edgekv_keys
+/graph-cache/edgekv_vals
+/graph-cache/edges
+/graph-cache/geometry
+/graphhopper-web-9.1.jar
+/illinois-latest.osm.pbf
+/iowa-latest.osm.pbf
+/graph-cache/location_index
+/graph-cache/nodes
+/graph-cache/nodes_ch_car
+/graph-cache/properties
+/graph-cache/properties.txt
+/graph-cache/shortcuts_car
+/uv.lock
+./.gitignore
