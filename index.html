@@ -11,22 +11,61 @@
         #hud {
             position: absolute;
             top: 20px;
-            left: 20px;
+            right: 20px;
             z-index: 1000;
             background: rgba(0, 0, 0, 0.8);
             padding: 15px;
             border: 1px solid #333;
             border-radius: 5px;
+            max-width: 350px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
         }
+        #instructions {
+            margin-top: 15px;
+            overflow-y: auto;
+            border-top: 1px solid #333;
+            padding-top: 10px;
+            font-size: 0.85em;
+            color: #ddd;
+        }
+        .instruction-step {
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px dashed #333;
+        }
+        .instruction-step:last-child {
+            border-bottom: none;
+        }
+        #instructions::-webkit-scrollbar { width: 6px; }
+        #instructions::-webkit-scrollbar-track { background: #111; }
+        #instructions::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+        
+        .autocomplete-container { position: relative; }
+        .autocomplete-list {
+            position: absolute; top: 100%; left: 0; right: 0; background: #222;
+            border: 1px solid #555; border-top: none; z-index: 1001; max-height: 200px;
+            overflow-y: auto; display: none; list-style: none; padding: 0; margin: 0;
+        }
+        .autocomplete-list li { padding: 8px; cursor: pointer; border-bottom: 1px solid #333; font-size: 0.85em; }
+        .autocomplete-list li:hover { background: #333; }
     </style>
 </head>
 <body>
     <div id="hud">
         <h3 style="margin-top: 0; color: #00ffcc;">ALPR EVASION ROUTER</h3>
-        <input type="text" id="origin" placeholder="Origin (e.g., Wrigley Field, Chicago)" style="width: 90%; margin-bottom: 10px; padding: 8px; background: #222; color: #fff; border: 1px solid #555;">
-        <input type="text" id="destination" placeholder="Destination (e.g., Millennium Park, Chicago)" style="width: 90%; margin-bottom: 10px; padding: 8px; background: #222; color: #fff; border: 1px solid #555;">
+        <div class="autocomplete-container" style="width: 90%; margin-bottom: 10px;">
+            <input type="text" id="origin" placeholder="Origin (e.g., Wrigley Field, Chicago)" style="width: 100%; padding: 8px; background: #222; color: #fff; border: 1px solid #555; box-sizing: border-box;" autocomplete="off" oninput="handleOriginInput(event)">
+            <ul id="origin-list" class="autocomplete-list"></ul>
+        </div>
+        <div class="autocomplete-container" style="width: 90%; margin-bottom: 10px;">
+            <input type="text" id="destination" placeholder="Destination (e.g., Millennium Park, Chicago)" style="width: 100%; padding: 8px; background: #222; color: #fff; border: 1px solid #555; box-sizing: border-box;" autocomplete="off" oninput="handleDestInput(event)">
+            <ul id="destination-list" class="autocomplete-list"></ul>
+        </div>
         <button onclick="executeEvasion()" style="width: 95%; padding: 10px; cursor: pointer; background: #00ffcc; color: #000; border: none; font-weight: bold; margin-bottom: 10px;">CALCULATE TRAJECTORY</button>
         <div id="status" style="color: #aaa; font-size: 0.9em;">Awaiting coordinates...</div>
+        <div id="instructions"></div>
     </div>
     <div id="map"></div>
 
@@ -34,11 +73,100 @@
     <script>
         const map = L.map('map').setView([41.8781, -87.6298], 12); // Centered on Chicago
         let currentRouteLayer = null;
+        let cameraLayer = null;
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '© OpenStreetMap'
         }).addTo(map);
+
+        async function fetchAndDisplayCameras() {
+            const bounds = map.getBounds();
+            const minLon = bounds.getWest();
+            const minLat = bounds.getSouth();
+            const maxLon = bounds.getEast();
+            const maxLat = bounds.getNorth();
+            
+            try {
+                const res = await fetch(`/api/v1/cameras/bbox?min_lon=${minLon}&min_lat=${minLat}&max_lon=${maxLon}&max_lat=${maxLat}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                
+                if (cameraLayer) {
+                    map.removeLayer(cameraLayer);
+                }
+                
+                cameraLayer = L.geoJSON(data, {
+                    style: { color: '#ff4444', weight: 1, fillColor: '#ff4444', fillOpacity: 0.4 },
+                    onEachFeature: function (feature, layer) {
+                        if (feature.properties && feature.properties.node_id) {
+                            layer.bindPopup("Camera ID: " + feature.properties.node_id);
+                        }
+                    }
+                }).addTo(map);
+            } catch (e) {
+                console.error("Failed to load cameras:", e);
+            }
+        }
+
+        map.on('moveend', fetchAndDisplayCameras);
+        map.whenReady(fetchAndDisplayCameras);
+
+        let originCoordsCached = null;
+        let destCoordsCached = null;
+
+        function debounce(func, wait) {
+            let timeout;
+            return function (...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func(...args), wait);
+            };
+        }
+
+        async function fetchAutocomplete(query, listId, inputId, isOrigin) {
+            const list = document.getElementById(listId);
+            if (query.length < 3) {
+                list.style.display = 'none';
+                return;
+            }
+            try {
+                const bounds = map.getBounds();
+                const viewbox = `${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()},${bounds.getSouth()}`;
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&viewbox=${viewbox}&bounded=1`);
+                const data = await res.json();
+                
+                list.innerHTML = '';
+                if (data.length > 0) {
+                    data.forEach(item => {
+                        const li = document.createElement('li');
+                        
+                        // Extract a cleaner, shorter name from the long display_name
+                        const nameParts = item.display_name.split(',').map(s => s.trim());
+                        const shortName = nameParts.slice(0, Math.min(3, nameParts.length)).join(', ');
+                        
+                        li.innerText = item.display_name;
+                        li.onclick = () => {
+                            document.getElementById(inputId).value = shortName;
+                            list.style.display = 'none';
+                            if (isOrigin) {
+                                originCoordsCached = [parseFloat(item.lon), parseFloat(item.lat)];
+                            } else {
+                                destCoordsCached = [parseFloat(item.lon), parseFloat(item.lat)];
+                            }
+                        };
+                        list.appendChild(li);
+                    });
+                    list.style.display = 'block';
+                } else {
+                    list.style.display = 'none';
+                }
+            } catch (e) {
+                console.error("Autocomplete error:", e);
+            }
+        }
+
+        const handleOriginInput = debounce((e) => { originCoordsCached = null; fetchAutocomplete(e.target.value, 'origin-list', 'origin', true); }, 400);
+        const handleDestInput = debounce((e) => { destCoordsCached = null; fetchAutocomplete(e.target.value, 'destination-list', 'destination', false); }, 400);
 
         async function geocode(query) {
             const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
@@ -59,11 +187,11 @@
 
             try {
                 statusDiv.innerText = "Translating addresses to coordinates...";
-                const originCoords = await geocode(originText);
-                const destCoords = await geocode(destText);
+                const originCoords = originCoordsCached || await geocode(originText);
+                const destCoords = destCoordsCached || await geocode(destText);
 
                 statusDiv.innerText = "Calculating evasive geometry...";
-                const response = await fetch('http://localhost:8000/api/v1/routes/evasive', {
+                const response = await fetch('/api/v1/routes/evasive', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -94,8 +222,30 @@
                     Distance: ${distanceMiles} mi<br>
                     Cameras Evaded: <span style="color: #ff4444; font-weight: bold;">${data.cameras_evaded}</span>
                 `;
+
+                const instructionsDiv = document.getElementById('instructions');
+                instructionsDiv.innerHTML = '';
+                if (data.instructions && data.instructions.length > 0) {
+                    let html = '<h4 style="margin: 0 0 10px 0; color: #00ffcc;">DIRECTIONS</h4>';
+                    data.instructions.forEach((step, index) => {
+                        let distanceStr = '';
+                        if (step.distance > 0) {
+                            const stepMiles = step.distance / 1609.34;
+                            if (stepMiles < 0.1) {
+                                distanceStr = ` <span style="color: #aaa;">(${Math.round(step.distance * 3.28084)} ft)</span>`;
+                            } else {
+                                distanceStr = ` <span style="color: #aaa;">(${stepMiles.toFixed(2)} mi)</span>`;
+                            }
+                        }
+                        html += `<div class="instruction-step">
+                            <strong>${index + 1}.</strong> ${step.text}${distanceStr}
+                        </div>`;
+                    });
+                    instructionsDiv.innerHTML = html;
+                }
             } catch (error) {
                 statusDiv.innerHTML = `<span style="color: #ff4444;">Error: ${error.message}</span>`;
+                document.getElementById('instructions').innerHTML = '';
             }
         }
     </script>

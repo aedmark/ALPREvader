@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgis/postgis:15-3.3
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: alpr_evasion
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  routing:
+    image: eclipse-temurin:17-jre
+    working_dir: /app
+    environment:
+      - JAVA_OPTS=-Xmx24g -Xms24g
+    volumes:
+      - ./:/app:z
+    command: ["sh", "-c", "java $$JAVA_OPTS -jar /app/graphhopper-web-9.1.jar server /app/config-alpr.yml"]
+    ports:
+      - "8989:8989"
+
+  api:
+    build: .
+    environment:
+      - DB_NAME=alpr_evasion
+      - DB_USER=postgres
+      - DB_PASSWORD=password
+      - DB_HOST=db
+      - DB_PORT=5432
+      - GRAPHHOPPER_URL=http://routing:8989/route
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - routing
+
+volumes:
+  pgdata:

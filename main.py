@@ -1,3 +1,4 @@
+import os
 import logging
 import json
 import requests
@@ -5,6 +6,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import List, Tuple
 
@@ -17,16 +19,21 @@ logging.basicConfig(
 
 # In production, these MUST be environment variables.
 DB_CONFIG = {
-    "dbname": "alpr_evasion",
-    "user": "postgres",
-    "password": "password",  # Replace with actual password
-    "host": "localhost",
-    "port": "5432"
+    "dbname": os.getenv("DB_NAME", "alpr_evasion"),
+    "user": os.getenv("DB_USER", "postgres"),
+    "password": os.getenv("DB_PASSWORD", "password"),
+    "host": os.getenv("DB_HOST", "localhost"),
+    "port": os.getenv("DB_PORT", "5432")
 }
 
-GRAPHHOPPER_URL = "http://localhost:8989/route"
+GRAPHHOPPER_URL = os.getenv("GRAPHHOPPER_URL", "http://localhost:8989/route")
 
 app = FastAPI(title="ALPR Evasion Routing API", version="1.0.0")
+
+@app.get("/")
+def read_root():
+    """Serve the main frontend interface."""
+    return FileResponse("index.html")
 
 # Configure the Lexical Firewall to allow cross-origin browser requests
 app.add_middleware(
@@ -49,6 +56,7 @@ class RouteResponse(BaseModel):
     route_geometry: dict
     cameras_evaded: int
     distance_meters: float
+    instructions: list = []
 
 
 def fetch_intersecting_zones(origin: List[float], destination: List[float]) -> List[dict]:
@@ -129,7 +137,7 @@ def build_custom_graphhopper_payload(origin: List[float], destination: List[floa
         ],
         "profile": profile,
         "elevation": False,
-        "instructions": False,
+        "instructions": True,
         "calc_points": True,
         "points_encoded": False,  # We want plain GeoJSON back for the frontend
         "ch.disable": True,  # Force engine off the pre-compiled graph
@@ -167,7 +175,8 @@ def get_evasive_route(req: RouteRequest):
         return RouteResponse(
             route_geometry=path['points'],
             cameras_evaded=len(zones),
-            distance_meters=path['distance']
+            distance_meters=path['distance'],
+            instructions=path.get('instructions', [])
         )
 
     except requests.exceptions.RequestException as e:
@@ -180,6 +189,41 @@ def get_evasive_route(req: RouteRequest):
             if "out of bounds" in response_text:
                 raise HTTPException(status_code=400, detail="One or more route points are outside the loaded map boundaries.")
         raise HTTPException(status_code=502, detail="Routing engine failed to find a viable evasive path.")
+
+
+@app.get("/api/v1/cameras/bbox")
+def get_cameras_in_bbox(min_lon: float, min_lat: float, max_lon: float, max_lat: float):
+    """
+    Returns all ALPR capture zones within a given bounding box.
+    """
+    query = """
+        SELECT node_id, ST_AsGeoJSON(ST_Buffer(capture_zone::geography, 50)::geometry) as geometry
+        FROM alpr_cameras
+        WHERE ST_Intersects(
+            capture_zone,
+            ST_MakeEnvelope(%s, %s, %s, %s, 4326)
+        );
+    """
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, (min_lon, min_lat, max_lon, max_lat))
+            results = cur.fetchall()
+            
+            features = []
+            for row in results:
+                features.append({
+                    "type": "Feature",
+                    "properties": {"node_id": row["node_id"]},
+                    "geometry": json.loads(row["geometry"])
+                })
+            return {"type": "FeatureCollection", "features": features}
+    except Exception as e:
+        logging.error(f"Failed to fetch cameras: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
 
 
 if __name__ == "__main__":
