@@ -12,12 +12,14 @@ Errors (exit 1):
   - a roadmap ID, decision number or question mentioned in a doc that does not exist
   - two session-log entries with the same number (HANDOFF and docs/archive/ together)
   - a relative link, or a path in AGENTS.md's Repository map table, that points at nothing
+  - the 3x manual source is invalid, or its generated HTML is stale
 Warnings (exit 0):
   - HANDOFF's "Last updated" is missing, or older than its newest session-log entry
   - HANDOFF's session log or "Current state" has outgrown the limits below (time to archive)
 
 Standard library only. HTML comments are ignored, so examples can live in them.
 """
+import importlib.util
 import re
 import sys
 from pathlib import Path
@@ -27,6 +29,7 @@ DOCS = [
     "AGENTS.md", "CLAUDE.md", "README.md", "ROADMAP.md",
     "docs/README.md", "docs/ROADMAP.md", "docs/HANDOFF.md", "docs/ARCHITECTURE.md", "docs/DECISIONS.md",
     "docs/TESTING.md", "docs/SECURITY.md", "docs/CHANGELOG.md", "docs/CONTRIBUTING.md",
+    "docs/manual/README.md",
 ]
 # Keep in step with AGENTS.md (end of session, step 3) and HANDOFF's header.
 LOG_LIMIT = 10
@@ -39,6 +42,42 @@ DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 LINK_RE = re.compile(r"\]\(([^)\s]+)\)|\b(?:href|src)=\"([^\"]+)\"")
 
 errors, warnings = [], []
+
+
+def check_3x_manual():
+    source = ROOT / "docs" / "manual" / "alpr-evader.manual.json"
+    output = ROOT / "docs" / "manual" / "index.html"
+    generator = ROOT / "tools" / "3x_manual.py"
+    for path in (source, generator):
+        if not path.is_file():
+            errors.append(f"{path.relative_to(ROOT)}: required 3x manual file is missing")
+            return
+
+    spec = importlib.util.spec_from_file_location("alpr_evader_3x_manual", generator)
+    if spec is None or spec.loader is None:
+        errors.append("tools/3x_manual.py: could not load the 3x manual generator")
+        return
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        data = module.prepared(source, [])
+        manual_errors, manual_warnings = module.validate(data)
+    except Exception as exc:
+        errors.append(f"docs/manual/alpr-evader.manual.json: could not validate: {exc}")
+        return
+
+    errors.extend(f"docs/manual/alpr-evader.manual.json: {message}" for message in manual_errors)
+    warnings.extend(f"docs/manual/alpr-evader.manual.json: {message}" for message in manual_warnings)
+    if manual_errors:
+        return
+    if not output.is_file():
+        errors.append("docs/manual/index.html: generated 3x manual is missing")
+    elif output.read_text(encoding="utf-8") != module.build_html(data):
+        errors.append(
+            "docs/manual/index.html: generated 3x manual is stale; run "
+            "python3 tools/3x_manual.py build docs/manual/alpr-evader.manual.json "
+            "--output docs/manual/index.html"
+        )
 
 
 def read(path):
@@ -169,6 +208,8 @@ def main():
         if current.count("\n") > CURRENT_STATE_LINES:
             warnings.append(f"docs/HANDOFF.md: Current state is {current.count(chr(10))} lines (limit "
                             f"{CURRENT_STATE_LINES}); move history to the session log")
+
+    check_3x_manual()
 
     for line in errors:
         print(f"ERROR {line}")

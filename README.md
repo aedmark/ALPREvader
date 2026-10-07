@@ -85,3 +85,11 @@ With FlockHopper, the routing algorithm is a black box—you ask for a route and
 FlockHopper's coverage is dictated by what the developer decides to support on their servers. Because you are downloading the raw `.osm.pbf` files directly from Geofabrik and ingesting them into your own PostgreSQL database, you own the entire map. You can ingest any country on earth, and add your own private camera coordinates into the database that aren't public on OpenStreetMap.
 
 **In short:** FlockHopper is an incredible, user-friendly consumer app for people who want an easy alternative to Google Maps.**ALPR Evader** is a sovereign, self-hosted infrastructure project for power users who refuse to trust anyone's servers but their own.
+
+---
+
+## Project Manual
+
+For a searchable guide to behavior, operation, architecture, trade-offs, and known limitations, open the
+[ALPR Evader 3x manual](docs/manual/index.html). It keeps each subject's **what**, **how**, and **why** together and
+links its claims back to the project's code and canonical documentation.

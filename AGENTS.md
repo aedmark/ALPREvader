@@ -116,8 +116,10 @@ Things an agent must not change without explicit permission. Every rule includes
 | `docs/SECURITY.md` | Assets, trust boundaries, secret handling, and reporting |
 | `docs/CONTRIBUTING.md` | Human and agent contribution workflow |
 | `docs/CHANGELOG.md` | User-visible release notes |
+| `docs/manual/` | 3x manual source, schema, attribution, and generated standalone HTML |
 | `docs/archive/` | Historical material no longer current |
 | `tools/check_docs.py` | Documentation consistency checks |
+| `tools/3x_manual.py` | Validate and generate the searchable 3x project manual |
 
 ## Engineering conventions
 

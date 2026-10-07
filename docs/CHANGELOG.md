@@ -10,5 +10,6 @@ to the version and date and start a new section.
 
 ### Added
 - Initial release candidate: per-state ingest, ALPR-avoiding car routes, web map showing Capture Zones.
+- Searchable 3x project manual covering behavior, operation, architecture, trade-offs, and known limitations.
 
 <!-- ## [0.1.0] - YYYY-MM-DD -->

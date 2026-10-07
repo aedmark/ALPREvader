@@ -17,6 +17,8 @@ to it instead of copying it.
 | `SECURITY.md` | Users and developers | Sensitive assets, trust boundaries, reporting, secure defaults | Full operational incident history |
 | `CONTRIBUTING.md` | Contributors | Setup, change, review, and submission workflow | Agent-only instructions |
 | `CHANGELOG.md` | Users | Released and unreleased user-visible changes | Commit-by-commit history |
+| `manual/index.html` | Operators and contributors | Searchable what/how/why reading path across the project | Canonical project facts or session state |
+| `manual/alpr-evader.manual.json` | Documentation maintainers | Editable source for the generated 3x manual | Facts that belong in the purpose-specific documents above |
 
 ## Update triggers
 
@@ -32,6 +34,7 @@ Update documents because a relevant fact changed, not merely because a session e
 | Work pauses with context another session needs | HANDOFF |
 | Contribution or release workflow change | CONTRIBUTING and, if agents are affected, AGENTS |
 | New planned work | ROADMAP, with origin and acceptance evidence |
+| Fact covered by the 3x manual | Update `manual/alpr-evader.manual.json` and rebuild `manual/index.html` |
 
 ## Optional documents
 

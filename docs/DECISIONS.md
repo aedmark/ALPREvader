@@ -87,6 +87,18 @@ the most recent source.
 `aedmark/ALPREvader`. No personal email address is published in the docs.
 **Consequences:** A maintainer must enable private vulnerability reporting in the repository settings (P6-03).
 
+## D-011 Generated 3x manual supplements canonical documentation  (2026-10-07, status: accepted)
+**Context:** The project needs a reader-oriented manual that explains behavior, mechanism, and rationale together,
+without turning a generated overview into a second source of truth.
+**Decision:** Keep the editable 3x source at `docs/manual/alpr-evader.manual.json`, generate the portable
+`docs/manual/index.html` with the standard-library `tools/3x_manual.py`, and keep the existing purpose-specific
+documents authoritative for their facts. `tools/check_docs.py` validates the source and rejects stale output.
+**Alternatives:** Hand-author one HTML manual: rejected because presentation and content would drift. Replace the
+existing documentation set: rejected because roadmap, decisions, security, testing, and handoff have distinct
+owners and update triggers.
+**Consequences:** Changes to facts covered by the manual must update its JSON source and generated HTML in the same
+change. Evidence links lead readers to canonical code and documents.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are

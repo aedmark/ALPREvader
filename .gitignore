@@ -13,4 +13,6 @@
 /graph-cache/properties.txt
 /graph-cache/shortcuts_car
 /uv.lock
+__pycache__/
+*.py[cod]
 ./.gitignore

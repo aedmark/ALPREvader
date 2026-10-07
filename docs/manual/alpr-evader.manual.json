@@ -1,0 +1,459 @@
+{
+  "$schema": "manual.schema.json",
+  "project": {
+    "name": "ALPR Evader",
+    "short_name": "ALPR Evader",
+    "version": "0.1.0",
+    "repository": "https://github.com/aedmark/ALPREvader"
+  },
+  "manual": {
+    "title": "{{project.name}} Manual",
+    "subtitle": "Behavior, internals, trade-offs, and known limitations",
+    "description": "A searchable guide for operators and contributors. The existing project documents remain authoritative; this manual joins their current facts into a what/how/why reading path.",
+    "badges": [
+      "Version {{project.version}}",
+      "Self-hosted",
+      "Privacy-first",
+      "Pre-release"
+    ],
+    "footer": "{{project.name}} {{project.version}} · Generated from docs/manual/alpr-evader.manual.json"
+  },
+  "theme": {
+    "accent": "#f63b3b",
+    "accent_secondary": "#00ffcc",
+    "icon": "◎"
+  },
+  "sections": [
+    {
+      "id": "foundations",
+      "title": "Foundations",
+      "description": "Begin with the product contract, the privacy boundary, and the present maturity of the project.",
+      "entries": [
+        {
+          "id": "product-purpose",
+          "title": "Privacy-first evasive routing",
+          "summary": "ALPR Evader calculates car routes around known Automatic License Plate Reader cameras on hardware controlled by the user.",
+          "tags": ["overview", "user-facing", "routing"],
+          "what": [
+            "Accepts an origin and destination and returns route geometry, distance, and turn instructions.",
+            "Penalizes roads that cross known camera Capture Zones, while still permitting a route through a zone when no alternative exists.",
+            "Displays known zones and the calculated route in a browser map."
+          ],
+          "how": "A local Docker Compose stack combines PostGIS camera data, GraphHopper road routing, a FastAPI orchestration layer, and a Leaflet page. The API converts nearby zones into a per-request GraphHopper custom model.",
+          "why": "D-001 records self-hosting as the core product choice: a hosted route service would learn the user's coordinates. D-002 and D-003 preserve route availability while strongly preferring camera-free roads.",
+          "evidence": [
+            {"label": "Public overview", "target": "README.md"},
+            {"label": "Architecture", "target": "docs/ARCHITECTURE.md"},
+            {"label": "Decisions D-001 to D-003", "target": "docs/DECISIONS.md"}
+          ],
+          "related": ["privacy-invariant", "capture-zones", "route-request-flow"]
+        },
+        {
+          "id": "privacy-invariant",
+          "title": "Location privacy invariant",
+          "summary": "Origins and destinations are intended never to leave the local stack, but the current browser implementation does not yet satisfy that contract.",
+          "tags": ["privacy", "security", "known-gap"],
+          "what": [
+            "Treats a user's origin, destination, travel pattern, and viewed map area as sensitive data.",
+            "Requires any new third-party host or location disclosure to be reviewed in the decision and security records.",
+            "Currently leaks typed addresses to public Nominatim and reveals viewed areas through third-party map asset requests."
+          ],
+          "how": "Route calculation and camera lookup run locally, but `index.html` loads Leaflet from unpkg, map tiles from OpenStreetMap, and sends address searches to nominatim.openstreetmap.org. The API also logs raw route coordinates at INFO.",
+          "why": "D-004 makes local handling a product invariant because location disclosure defeats the reason to self-host. P2-01 through P2-03 track the code changes needed to make the promise true.",
+          "evidence": [
+            {"label": "Privacy decision D-004", "target": "docs/DECISIONS.md"},
+            {"label": "Security boundary table", "target": "docs/SECURITY.md"},
+            {"label": "Current browser requests", "target": "index.html"},
+            {"label": "Privacy roadmap", "target": "ROADMAP.md"}
+          ],
+          "related": ["product-purpose", "browser-and-third-parties", "api-security-boundaries"]
+        },
+        {
+          "id": "project-maturity",
+          "title": "Pre-release status and known gaps",
+          "summary": "The stack has worked for maintainers, but a fresh clone is not yet reproducible and automated application tests do not exist.",
+          "tags": ["status", "limitations", "roadmap"],
+          "what": [
+            "Documents working behavior separately from behavior verified in the current checkout.",
+            "Makes missing setup inputs, privacy defects, routing-reporting defects, and test gaps visible before an operator relies on the system."
+          ],
+          "how": "The current handoff records the last verified commands and unverified runtime claims. Phase 1 tracks the missing database schema, `car.json`, and GraphHopper jar; Phase 4 tracks automated tests and CI.",
+          "why": "Inferred from the project's evidence rules: preserving uncertainty prevents the README's intended behavior from being mistaken for fresh-clone or security evidence.",
+          "evidence": [
+            {"label": "Current state", "target": "docs/HANDOFF.md"},
+            {"label": "Planned work", "target": "ROADMAP.md"},
+            {"label": "Testing limits", "target": "docs/TESTING.md"}
+          ],
+          "related": ["setup-prerequisites", "verification", "privacy-invariant"]
+        }
+      ]
+    },
+    {
+      "id": "operating",
+      "title": "Setup and Operation",
+      "description": "Follow the intended operator workflow while accounting for the known fresh-clone gaps and persistent state.",
+      "entries": [
+        {
+          "id": "setup-prerequisites",
+          "title": "Host prerequisites",
+          "summary": "The intended environment is a Linux or macOS host with Docker Compose, a GraphHopper jar, map storage, and enough memory for the selected extract.",
+          "tags": ["setup", "docker", "resources"],
+          "what": [
+            "Runs the complete application as local containers.",
+            "Uses Java heap settings that default to 24 GB, which is too large for many laptops.",
+            "Requires files that are not yet fetched or created by the repository's setup flow."
+          ],
+          "how": "Docker Compose builds the Python services, starts PostGIS and a Java 17 GraphHopper container, and bind-mounts the repository into the routing and ingest containers. The routing command expects `graphhopper-web-9.1.jar` and `car.json` in the checkout.",
+          "why": "D-001 accepts local resource cost in exchange for keeping routing under the user's control. P1-01 through P1-03 and P4-05 exist because the current defaults and missing files make that trade-off unnecessarily difficult.",
+          "evidence": [
+            {"label": "Quick start", "target": "README.md"},
+            {"label": "Compose services", "target": "docker-compose.yml"},
+            {"label": "Environment guidance", "target": "docs/TESTING.md"},
+            {"label": "Setup roadmap", "target": "ROADMAP.md"}
+          ],
+          "related": ["state-ingest", "start-and-route", "persistent-state"]
+        },
+        {
+          "id": "state-ingest",
+          "title": "State ingest workflow",
+          "summary": "A shell command downloads one US state extract, imports its ALPR nodes, and can switch GraphHopper to that state's roads.",
+          "tags": ["operation", "ingest", "openstreetmap"],
+          "synopsis": "./scripts/ingest_state.sh <state-name>",
+          "what": [
+            "Downloads `<state>-latest.osm.pbf` from Geofabrik.",
+            "Extracts OSM nodes tagged `man_made=surveillance` and `surveillance:type=ALPR` into PostGIS.",
+            "Optionally updates `config-alpr.yml`, removes the old road graph cache, and restarts GraphHopper."
+          ],
+          "how": "`scripts/ingest_state.sh` downloads the PBF and invokes `scripts/ingest_state.py` inside the ingester container. The Python handler inserts each matching node and a 50-meter polygon, committing in batches. A state switch rewrites GraphHopper's input filename and rebuilds `graph-cache/`.",
+          "why": "Per-state extracts limit download size and GraphHopper memory use. D-008 changes the intended database policy from accumulating stale rows to replacing rows from the same source while retaining other states; that behavior is planned but not implemented.",
+          "evidence": [
+            {"label": "Pipeline", "target": "scripts/ingest_state.sh"},
+            {"label": "OSM parser", "target": "scripts/ingest_state.py"},
+            {"label": "Re-ingest decision D-008", "target": "docs/DECISIONS.md"}
+          ],
+          "related": ["camera-data", "persistent-state", "setup-prerequisites"]
+        },
+        {
+          "id": "start-and-route",
+          "title": "Start the stack and request a route",
+          "summary": "After ingest and graph preparation, the intended entry point is the browser UI at `http://localhost:8000`.",
+          "tags": ["operation", "web-ui", "routing"],
+          "synopsis": "docker compose up -d",
+          "what": [
+            "Starts the database, routing engine, and API services.",
+            "Serves `index.html` from the API root and lets the user enter an origin and destination.",
+            "Draws the returned route and turn instructions over the camera-zone map."
+          ],
+          "how": "The browser geocodes typed text, posts `[lon, lat]` pairs to `/api/v1/routes/evasive`, renders returned GeoJSON with Leaflet, and fetches `/api/v1/cameras/bbox` whenever the map stops moving.",
+          "why": "A single static page avoids a frontend build system and keeps the operator workflow compact. The current address-search convenience conflicts with D-004 and is scheduled to become map-click or coordinate input under D-007.",
+          "evidence": [
+            {"label": "Operator guide", "target": "README.md"},
+            {"label": "Browser implementation", "target": "index.html"},
+            {"label": "Geocoding decision D-007", "target": "docs/DECISIONS.md"}
+          ],
+          "related": ["browser-and-third-parties", "route-api", "camera-api"]
+        },
+        {
+          "id": "persistent-state",
+          "title": "Persistent data and rebuild costs",
+          "summary": "Camera rows, road graphs, and downloaded map extracts outlive individual container runs and have different recovery costs.",
+          "tags": ["operation", "storage", "recovery"],
+          "what": [
+            "Keeps PostGIS data in the `pgdata` Docker volume.",
+            "Keeps GraphHopper's generated road graph in `graph-cache/`.",
+            "Keeps downloaded `.osm.pbf` files and the GraphHopper jar outside Git."
+          ],
+          "how": "Compose owns the database volume; GraphHopper writes the bind-mounted cache, often as root; ingest scripts write map extracts in the repository root. Switching routing states removes only the graph cache through a disposable container.",
+          "why": "Reusing these artifacts avoids expensive downloads and graph builds. Their different lifecycles are protected because deleting `pgdata` loses ingested cameras and rebuilding a graph can consume substantial time and RAM.",
+          "evidence": [
+            {"label": "State inventory", "target": "docs/ARCHITECTURE.md"},
+            {"label": "Protected areas", "target": "AGENTS.md"},
+            {"label": "Compose volume", "target": "docker-compose.yml"}
+          ],
+          "related": ["state-ingest", "failure-modes", "setup-prerequisites"]
+        }
+      ]
+    },
+    {
+      "id": "routing-system",
+      "title": "Routing System",
+      "description": "Trace a route from browser input through spatial selection and GraphHopper's custom model.",
+      "entries": [
+        {
+          "id": "capture-zones",
+          "title": "Capture Zones",
+          "summary": "A Capture Zone is a polygon around a known camera that receives a severe routing penalty.",
+          "tags": ["domain", "postgis", "routing"],
+          "what": [
+            "Represents proximity to a camera as an area rather than a point.",
+            "Lets GraphHopper penalize any road segment that enters the area.",
+            "Currently produces an effective radius of roughly 100 meters because a 50-meter buffer is applied during ingest and again during API queries."
+          ],
+          "how": "The ingester transforms each WGS84 camera point to EPSG:3857, buffers it by 50 meters, and stores the result in SRID 4326. Both camera API queries then apply another 50-meter geography buffer before returning GeoJSON.",
+          "why": "An area models uncertain camera coverage better than a zero-width point. D-009 chooses a 75-meter radius applied exactly once; P3-01 tracks the correction from the current doubled buffer.",
+          "evidence": [
+            {"label": "Current SQL", "target": "scripts/ingest_state.py"},
+            {"label": "Second buffer", "target": "main.py"},
+            {"label": "Radius decision D-009", "target": "docs/DECISIONS.md"}
+          ],
+          "related": ["camera-data", "custom-routing-model", "camera-api"]
+        },
+        {
+          "id": "route-request-flow",
+          "title": "Route request flow",
+          "summary": "Each request selects nearby zones, creates an avoidance model, calls local GraphHopper, and translates the result for the browser.",
+          "tags": ["data-flow", "api", "graphhopper"],
+          "what": [
+            "Receives origin and destination coordinates in GeoJSON order: `[longitude, latitude]`.",
+            "Selects cameras within a padded corridor, not every camera in the database.",
+            "Returns plain GeoJSON route geometry, distance in meters, turn instructions, and a camera count."
+          ],
+          "how": [
+            "FastAPI pads the coordinate bounding box by 0.1 degrees and queries intersecting zones from PostGIS.",
+            "It assigns each zone a GraphHopper custom-model area with a `multiply_by: 0.01` priority rule.",
+            "It posts the payload to local GraphHopper with a 10-second timeout and returns the first path."
+          ],
+          "why": "D-002 selects per-request models so camera data can change without rebuilding the road graph. Limiting zones to a corridor controls payload size; the fixed 0.1-degree padding is an implementation heuristic, not a measured guarantee.",
+          "evidence": [
+            {"label": "Route implementation", "target": "main.py"},
+            {"label": "Architecture flow", "target": "docs/ARCHITECTURE.md"},
+            {"label": "Custom model decision D-002", "target": "docs/DECISIONS.md"}
+          ],
+          "related": ["route-api", "custom-routing-model", "failure-modes"]
+        },
+        {
+          "id": "route-api",
+          "title": "Evasive route API",
+          "summary": "`POST /api/v1/routes/evasive` is the browser's route-calculation interface.",
+          "tags": ["api", "contract", "fastapi"],
+          "synopsis": "POST /api/v1/routes/evasive {origin:[lon,lat], destination:[lon,lat], profile:\"car\"}",
+          "what": [
+            "Validates that origin and destination each contain exactly two numbers.",
+            "Returns `route_geometry`, `cameras_evaded`, `distance_meters`, and `instructions`.",
+            "Returns 400 for recognized out-of-bounds GraphHopper errors, 500 for database failures, and 502 for routing-engine request failures."
+          ],
+          "how": "Pydantic parses the request and FastAPI serializes `RouteResponse`. The synchronous handler opens a database connection per request, builds the GraphHopper payload, and maps selected downstream failures to HTTP exceptions.",
+          "why": "The explicit JSON contract keeps the single-page client small and uses GeoJSON coordinate order end to end. Current validation does not check coordinate ranges, and only the `car` profile is configured despite accepting arbitrary profile text; P4-04 and P3-04 track those gaps.",
+          "evidence": [
+            {"label": "API models and endpoint", "target": "main.py"},
+            {"label": "Interface table", "target": "docs/ARCHITECTURE.md"},
+            {"label": "Validation roadmap", "target": "ROADMAP.md"}
+          ],
+          "related": ["route-request-flow", "custom-routing-model", "api-security-boundaries"]
+        },
+        {
+          "id": "camera-api",
+          "title": "Camera bounding-box API",
+          "summary": "`GET /api/v1/cameras/bbox` supplies Capture Zone features for the currently visible map area.",
+          "tags": ["api", "geojson", "map"],
+          "synopsis": "GET /api/v1/cameras/bbox?min_lon=…&min_lat=…&max_lon=…&max_lat=…",
+          "what": "Returns a GeoJSON FeatureCollection containing each intersecting camera's node ID and zone polygon.",
+          "how": "FastAPI coerces four query parameters to floats, PostGIS intersects the requested envelope with stored polygons, and the handler converts database GeoJSON strings into response objects. The page calls it on map readiness and after `moveend`.",
+          "why": "Viewport-scoped loading avoids sending the entire camera database to the browser. There is currently no coordinate-range validation or maximum bbox size, so P4-04 covers abuse and accidental oversized queries.",
+          "evidence": [
+            {"label": "Endpoint", "target": "main.py"},
+            {"label": "Map client", "target": "index.html"},
+            {"label": "Boundary inventory", "target": "docs/SECURITY.md"}
+          ],
+          "related": ["capture-zones", "start-and-route", "api-security-boundaries"]
+        },
+        {
+          "id": "custom-routing-model",
+          "title": "Soft-avoidance custom model",
+          "summary": "GraphHopper receives camera zones as dynamic areas whose traversal priority is multiplied by 0.01.",
+          "tags": ["graphhopper", "algorithm", "trade-off"],
+          "what": [
+            "Strongly discourages a route from entering known Capture Zones.",
+            "Allows unavoidable zone crossings instead of making some destinations unreachable.",
+            "Disables contraction hierarchies for the request so the dynamic model can take effect."
+          ],
+          "how": "`build_custom_graphhopper_payload` assigns each selected camera a stable request-local area name, embeds its GeoJSON feature, adds an `in_<area>` priority rule, sets `ch.disable` to true, and requests unencoded path points plus instructions.",
+          "why": "D-003 explicitly rejects a hard zero multiplier because a camera may sit on the only physical access route. The cost is slower flexible routing and the possibility that a returned route still passes a camera.",
+          "evidence": [
+            {"label": "Payload builder", "target": "main.py"},
+            {"label": "Soft-avoidance decision D-003", "target": "docs/DECISIONS.md"},
+            {"label": "GraphHopper profile", "target": "config-alpr.yml"}
+          ],
+          "related": ["capture-zones", "route-request-flow", "camera-count-semantics"]
+        },
+        {
+          "id": "camera-count-semantics",
+          "title": "Camera count semantics",
+          "summary": "The response field `cameras_evaded` currently counts selected corridor cameras, not cameras proven to be avoided.",
+          "tags": ["known-gap", "api", "accuracy"],
+          "what": "Reports the number of Capture Zones included in the GraphHopper custom model for a request.",
+          "how": "The endpoint returns `len(zones)` immediately after querying the padded bounding box; it does not compare the chosen path with those polygons.",
+          "why": "The current name overstates the evidence. P3-02 plans to intersect the returned route with zones and distinguish cameras avoided from cameras still passed.",
+          "evidence": [
+            {"label": "Current response construction", "target": "main.py"},
+            {"label": "Known discrepancy", "target": "docs/ARCHITECTURE.md"},
+            {"label": "Correction plan P3-02", "target": "ROADMAP.md"}
+          ],
+          "related": ["route-api", "custom-routing-model", "project-maturity"]
+        }
+      ]
+    },
+    {
+      "id": "components-and-boundaries",
+      "title": "Components and Boundaries",
+      "description": "Understand the four runtime services, their persistent data, and the trust boundaries between them.",
+      "entries": [
+        {
+          "id": "compose-stack",
+          "title": "Docker Compose topology",
+          "summary": "The runtime is split into PostGIS, GraphHopper, an optional ingester, and the FastAPI service that also serves the UI.",
+          "tags": ["architecture", "docker", "services"],
+          "what": [
+            "Runs `db` for spatial camera state, `routing` for the road graph, `ingester` for one-shot OSM imports, and `api` for HTTP orchestration and the static page.",
+            "Publishes the API on port 8000 and GraphHopper on port 8989; PostGIS is kept inside the Compose network."
+          ],
+          "how": "The API depends on both database and routing services and reaches them by Compose DNS. The ingester uses a profile so normal startup does not leave an ingest container running. Shared bind mounts give GraphHopper and the ingester access to map files and scripts.",
+          "why": "D-001 uses familiar, replaceable local components rather than a hosted backend. Service separation keeps spatial storage, road routing, and request orchestration independently understandable, at the cost of more setup and memory.",
+          "evidence": [
+            {"label": "Service definitions", "target": "docker-compose.yml"},
+            {"label": "Architecture code map", "target": "docs/ARCHITECTURE.md"},
+            {"label": "Stack decision D-001", "target": "docs/DECISIONS.md"}
+          ],
+          "related": ["camera-data", "route-request-flow", "persistent-state"]
+        },
+        {
+          "id": "camera-data",
+          "title": "Camera data model",
+          "summary": "PostGIS stores an OSM node identifier, a point location, and a Capture Zone polygon in SRID 4326.",
+          "tags": ["database", "postgis", "schema"],
+          "what": "Supplies spatially searchable camera locations and precomputed coverage polygons to both routing and map-display queries.",
+          "how": "The ingester issues parameterized inserts into `alpr_cameras` and relies on `node_id` being unique for `ON CONFLICT`. Both API queries use `ST_Intersects` against a WGS84 envelope. The schema itself is currently missing from the repository.",
+          "why": "PostGIS provides the geometry transformations and intersection queries required by the routing flow (D-001). P1-01 will make the implicit schema reproducible, and D-008 requires adding a source-extract field for correct re-ingest behavior.",
+          "evidence": [
+            {"label": "Ingest SQL", "target": "scripts/ingest_state.py"},
+            {"label": "Database queries", "target": "main.py"},
+            {"label": "Schema contract and gap", "target": "docs/ARCHITECTURE.md"}
+          ],
+          "related": ["state-ingest", "capture-zones", "compose-stack"]
+        },
+        {
+          "id": "browser-and-third-parties",
+          "title": "Browser UI and third-party requests",
+          "summary": "The one-file Leaflet UI is operationally simple but presently depends on public CDN, tile, and geocoding services.",
+          "tags": ["frontend", "privacy", "network"],
+          "what": [
+            "Provides address inputs, autocomplete, a map, camera overlays, a route line, status, and turn directions.",
+            "Contacts unpkg, OpenStreetMap tile servers, and Nominatim directly from the browser."
+          ],
+          "how": "Inline JavaScript debounces Nominatim searches, caches selected coordinates, posts route requests to the local API, and manages Leaflet layers. Leaflet CSS and JavaScript are loaded from unpkg and the base map uses public tile URLs.",
+          "why": "A single static file minimizes tooling, but these external requests expose user context and contradict D-004. D-007 removes public address search; P2-02 will vendor Leaflet and decide how map tiles are handled.",
+          "evidence": [
+            {"label": "Frontend", "target": "index.html"},
+            {"label": "Privacy gaps", "target": "docs/SECURITY.md"},
+            {"label": "Geocoding decision D-007", "target": "docs/DECISIONS.md"}
+          ],
+          "related": ["privacy-invariant", "start-and-route", "api-security-boundaries"]
+        },
+        {
+          "id": "api-security-boundaries",
+          "title": "API trust boundaries",
+          "summary": "All request data is untrusted; current validation and browser access controls are intentionally documented as incomplete.",
+          "tags": ["security", "validation", "cors"],
+          "what": [
+            "Uses parameterized SQL for route and bbox queries.",
+            "Applies basic Pydantic shape validation and a 10-second GraphHopper timeout.",
+            "Currently allows any origin through CORS, logs route coordinates, and omits range and bbox-size limits."
+          ],
+          "how": "FastAPI performs type coercion, psycopg2 binds SQL parameters, and `requests.post` enforces the downstream timeout. CORS is configured with `allow_origins=[\"*\"]` and credentials enabled.",
+          "why": "Parameterized queries and timeouts provide minimum boundary protection. P2-03, P2-04, and P4-04 exist because a local service can still leak sensitive data or be driven by malicious websites.",
+          "evidence": [
+            {"label": "API configuration", "target": "main.py"},
+            {"label": "Security inventory", "target": "docs/SECURITY.md"},
+            {"label": "Privacy and validation roadmap", "target": "ROADMAP.md"}
+          ],
+          "related": ["privacy-invariant", "route-api", "camera-api"]
+        },
+        {
+          "id": "failure-modes",
+          "title": "Failure modes and recovery",
+          "summary": "Most runtime failures are diagnosed through container or API logs and recovered by restoring the unavailable local component.",
+          "tags": ["operations", "reliability", "troubleshooting"],
+          "what": [
+            "Surfaces database failures as HTTP 500 and GraphHopper request failures as HTTP 502.",
+            "Recognizes some out-of-bounds routing errors as HTTP 400.",
+            "Leaves graph-building progress, heap exhaustion, and missing schema diagnosis to service logs."
+          ],
+          "how": "The API catches database and `requests` exceptions, while Docker records service exits and GraphHopper import output. Operators wait for graph import, start missing services, select an in-bounds state, or adjust heap size depending on the symptom.",
+          "why": "Inferred from the current pre-release scope: direct logs are the only observability layer. The architecture document centralizes recovery guidance so handlers and UI code do not carry operational prose.",
+          "evidence": [
+            {"label": "Error handling", "target": "main.py"},
+            {"label": "Failure-mode table", "target": "docs/ARCHITECTURE.md"},
+            {"label": "Manual environment guidance", "target": "docs/TESTING.md"}
+          ],
+          "related": ["persistent-state", "verification", "route-api"]
+        }
+      ]
+    },
+    {
+      "id": "maintenance",
+      "title": "Maintenance and Evidence",
+      "description": "Keep changes reviewable, claims traceable, and this generated manual synchronized with its source.",
+      "entries": [
+        {
+          "id": "verification",
+          "title": "Verification strategy",
+          "summary": "Documentation consistency and Python syntax are automated; end-to-end routing is still a manual, resource-intensive check.",
+          "tags": ["testing", "evidence", "quality"],
+          "synopsis": "python3 tools/check_docs.py && python3 -m py_compile main.py scripts/ingest_state.py",
+          "what": [
+            "Checks roadmap, decision, question, link, handoff, and 3x manual consistency.",
+            "Confirms that the Python entry points parse.",
+            "Defines a manual small-state route exercise for full-stack behavior."
+          ],
+          "how": "`tools/check_docs.py` performs standard-library consistency checks and validates that the 3x source can reproduce the committed manual. `py_compile` checks syntax. The manual route recipe ingests a small state, starts Compose, waits for GraphHopper, and visually checks a route around a known zone.",
+          "why": "The fast set is cheap enough for every change; the full check requires Docker, a download, substantial time, and RAM. P4-01 through P4-03 plan unit, CI, and fixture-based integration coverage.",
+          "evidence": [
+            {"label": "Test strategy", "target": "docs/TESTING.md"},
+            {"label": "Documentation checker", "target": "tools/check_docs.py"},
+            {"label": "Quality roadmap", "target": "ROADMAP.md"}
+          ],
+          "related": ["project-maturity", "failure-modes", "contribution-workflow"]
+        },
+        {
+          "id": "contribution-workflow",
+          "title": "Contribution workflow",
+          "summary": "Changes happen on focused feature branches, preserve user work, update affected documentation, and are merged by a maintainer.",
+          "tags": ["contributors", "git", "review"],
+          "what": [
+            "Uses `feature/<roadmap-id>-<topic>` or `feature/<topic>` branches.",
+            "Requires appropriate checks and exact reporting of anything not run.",
+            "Protects legal text, persistent data, graph caches, and privacy boundaries from unapproved changes."
+          ],
+          "how": "Contributors read the current handoff and relevant durable docs, inspect Git state, make one reviewable change, run the test matrix, review the diff, and leave continuation context when needed. Maintainers push and merge.",
+          "why": "D-006 replaced direct commits to `main` because feature branches create a review point and readable history. Protected areas reflect high recovery cost, legal ownership, or the core privacy promise.",
+          "evidence": [
+            {"label": "Agent protocol", "target": "AGENTS.md"},
+            {"label": "Contributor guide", "target": "docs/CONTRIBUTING.md"},
+            {"label": "Branch decision D-006", "target": "docs/DECISIONS.md"}
+          ],
+          "related": ["verification", "documentation-system", "persistent-state"]
+        },
+        {
+          "id": "documentation-system",
+          "title": "Documentation sources and the 3x manual",
+          "summary": "Durable facts remain in their purpose-specific Markdown documents; this manual is a generated, reader-oriented synthesis.",
+          "tags": ["documentation", "generated", "maintenance"],
+          "what": [
+            "Provides a searchable what/how/why path across product behavior, operation, architecture, privacy, and contribution.",
+            "Keeps `docs/manual/alpr-evader.manual.json` as the editable source and `docs/manual/index.html` as the portable generated artifact.",
+            "Treats README, architecture, decisions, testing, security, roadmap, and handoff files as the authoritative homes for their respective facts."
+          ],
+          "how": "The standard-library generator in `tools/3x_manual.py` validates stable IDs, triad completeness, evidence, and related links, then emits one offline HTML file. The normal documentation check also detects invalid source and stale generated output.",
+          "why": "D-011 keeps presentation separate from source while avoiding a second authority for project facts. The generated manual improves discovery; evidence targets lead maintainers back to the canonical documents and code.",
+          "evidence": [
+            {"label": "Documentation ownership", "target": "docs/README.md"},
+            {"label": "Manual source", "target": "docs/manual/alpr-evader.manual.json"},
+            {"label": "Generator", "target": "tools/3x_manual.py"},
+            {"label": "Documentation decision D-011", "target": "docs/DECISIONS.md"}
+          ],
+          "related": ["verification", "contribution-workflow", "project-maturity"]
+        }
+      ]
+    }
+  ]
+}

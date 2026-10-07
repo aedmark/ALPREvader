@@ -9,7 +9,7 @@ There is no automated test suite yet (P4-01). What exists:
 
 | Suite | File | Proves | Does not prove | Time, needs |
 | --- | --- | --- | --- | --- |
-| Docs | `tools/check_docs.py` | IDs, decisions, questions and links in the docs are consistent | that the docs are true | seconds, Python only |
+| Docs | `tools/check_docs.py` | IDs, decisions, questions and links are consistent; the 3x source is valid and its HTML is current | that the docs are true | seconds, Python only |
 | Syntax | `python3 -m py_compile` | Python files parse | imports resolve, anything runs | seconds |
 | Manual route | see below | the full stack routes around a known camera | other states, edge cases | ~30 min first time, Docker, RAM |
 
@@ -37,6 +37,12 @@ python3 tools/check_docs.py
 ```
 
 - A pass is `0 error(s)` and exit 0. Warnings (stale handoff date, long session log) do not fail it.
+- To validate or rebuild the 3x manual directly:
+
+```bash
+python3 tools/3x_manual.py check docs/manual/alpr-evader.manual.json
+python3 tools/3x_manual.py build docs/manual/alpr-evader.manual.json --output docs/manual/index.html
+```
 
 ### Manual route check
 
